@@ -54,21 +54,27 @@ Run `sudo pip3 install python-bidi google-api-python-client google-auth-httplib2
   -h, --help            show this help message and exit
   --credentials CREDENTIALS, -c CREDENTIALS
                         path to your credentials.json file
+  --conf CONF, -cd CONF
+                        path to the i3agenda configuration and cache folder
   --cachettl CACHETTL, -ttl CACHETTL
                         time for cache to be kept in minutes
-  --update, -u          when using this flag it will not load previous results from cache, it will however save new results to cache. You can use this flag to refresh all the cache forcefully
+  --update, -u          when using this flag it will not load previous results from cache, it will however save new results to cache.
+                        You can use this flag to refresh all the cache forcefully
   --ids IDS [IDS ...], -i IDS [IDS ...]
-                        list of calendar ids to fetch, space separated. If none is specified all calendars will be fetched
+                        list of calendar ids to fetch, space separated. If  none is specified all calendars will be fetched
   --maxres MAXRES, -r MAXRES
-                        max number of events to query Google's API for each of your calendars. Increase this number if you have lot of events in your google calendar
+                        max number of events to query Google's API for each of your calendars.
+                        Increase this number if you have lot of events in your google calendar
   --today, -d           print only today events
   --no-event-text TEXT  text to display when there are no events
-  --hide-event-after MINUTES
-                        minutes to show events after they start before showing the next event. If not specified, the current event will be shown until it ends
-  --date-format DATEFORMAT
+  --hide-event-after HIDE_EVENT_AFTER
+                        minutes to show events after they start before showing the next event.
+                        If not specified, the current event will be shown until it ends
+  --date-format DATE_FORMAT
                         the date format like %d/%m/%y. Default is %d/%m
-  --limchar LIMIT, -l LIMIT
-                        limits the size of the event summary string in LIMIT characters. If not specified it shows the entire summary.
+  --limchar LIMCHAR, -l LIMCHAR
+                        the max characters that the displayed event can contain
+  --skip SKIP, -s SKIP  the number of events to skip from the most recent
 ```
 
 ### Filter displayed calendars
@@ -84,6 +90,9 @@ It might not work properly if you have more than 10 all day events, this can be 
 It uses a caching mechanism so you won't have to contact Google servers every minute, to set the cache TTL use the -ttl flag.\
 Example: `i3-agenda --ttl 60` to set the TTL to 60 (meaning it will contact Google again every hour).\
 This means that if you create a new event, it might take an hour for the script to recognize it.
+
+### Multi account support
+Multi account support is not officialy supported, but you can use the workaround from this issue: https://github.com/rosenpin/i3-agenda/issues/35#issuecomment-923976482
 
 ## Examples
 Example polybar configuration:
@@ -102,7 +111,7 @@ interval = 60
 ```
 
 Example i3block configuration:
-```
+```ini
 [i3-agenda]
 command=i3-agenda -c ~/.google_credentials.json -ttl 60
 interval=60
@@ -111,3 +120,56 @@ interval=60
 
 Example output of the script:\
 ```10:55 Grocery shopping```
+
+### How to use the `skip` flag to scroll events
+
+Edit the polybar configuration creating two modules:
+
+```ini
+[module/agenda-ipc]
+type = custom/ipc
+
+hook-0 = i3-agenda -c ~/.google_credentials.json --skip $(cat ~/.config/i3-agenda/i3-agenda-skip.tmp || echo 0)
+hook-1 = ~/.config/polybar/scripts/i3agenda-onscroll.sh down && i3-agenda -c ~/.google_credentials.json --skip $(cat ~/.config/i3-agenda/i3-agenda-skip.tmp || echo 0)
+hook-2 = ~/.config/polybar/scripts/i3agenda-onscroll.sh up && i3-agenda -c ~/.google_credentials.json --skip $(cat ~/.config/i3-agenda/i3-agenda-skip.tmp || echo 0)
+
+format = %{F#61afef}%{F-} <output>
+
+; left click to launch Google Calendar
+click-left = firefox https://calendar.google.com/calendar/u/0/r
+; right click force update the cache, if for example you just added a new event
+click-right = rm ~/.config/i3-agenda/i3-agenda-skip.tmp; i3-agenda -c ~/.config/i3-agenda/client_secret.json --update && notify-send "i3-agenda" "Sync completed"
+
+; show the previous event
+scroll-down = polybar-msg hook agenda-ipc 2
+; show the next event
+scroll-up = polybar-msg hook agenda-ipc 3
+
+[module/agenda]
+type = custom/script
+interval = 900
+exec = polybar-msg hook agenda-ipc 1
+label =
+```
+
+Add both modules to the bar, for example:
+
+```ini
+modules-center = agenda agenda-ipc
+```
+
+In the polybar scripts folder add the file `i3agenda-onscroll.sh`:
+
+```bash
+#!/usr/bin/env bash
+if [ -n "${1}" ]; then
+  file=~/.config/i3-agenda/i3-agenda-skip.tmp
+  typeset -i skip=$(cat $file || echo 0)
+  if [[ "${1}" == "up" ]]; then
+    skip+=1
+  elif [[ "${1}" == "down" && $skip -gt 0 ]]; then
+    skip=$(( skip - 1))
+  fi
+  echo $skip > $file
+fi
+```
